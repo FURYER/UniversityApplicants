@@ -1,9 +1,3 @@
--- Создание базы данных
-CREATE DATABASE university_applicants;
-
--- Подключение к базе данных
-\c university_applicants;
-
 -- Создание схемы
 CREATE SCHEMA IF NOT EXISTS university;
 
@@ -14,6 +8,18 @@ CREATE TABLE university.specialties (
     code VARCHAR(20) NOT NULL UNIQUE,
     faculty VARCHAR(100) NOT NULL,
     seats_available INTEGER NOT NULL CHECK (seats_available >= 0),
+    study_form VARCHAR(20) NOT NULL DEFAULT 'full_time' CHECK (study_form IN ('full_time', 'part_time', 'distance')),
+    tuition_fee INTEGER,
+    passing_score INTEGER CHECK (passing_score >= 0 AND passing_score <= 100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Создание таблицы вступительных экзаменов
+CREATE TABLE university.entrance_exams (
+    exam_id SERIAL PRIMARY KEY,
+    specialty_id INTEGER REFERENCES university.specialties(specialty_id) ON DELETE CASCADE,
+    subject VARCHAR(50) NOT NULL,
+    min_score INTEGER NOT NULL CHECK (min_score >= 0 AND min_score <= 100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -47,7 +53,7 @@ CREATE TABLE university.applications (
     application_id SERIAL PRIMARY KEY,
     applicant_id INTEGER REFERENCES university.applicants(applicant_id) ON DELETE CASCADE,
     specialty_id INTEGER REFERENCES university.specialties(specialty_id) ON DELETE RESTRICT,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'under_review', 'approved', 'rejected')),
     submission_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -66,6 +72,7 @@ CREATE TABLE university.exam_results (
 CREATE INDEX idx_applicants_passport ON university.applicants(passport_number);
 CREATE INDEX idx_applications_status ON university.applications(status);
 CREATE INDEX idx_exam_results_application ON university.exam_results(application_id);
+CREATE INDEX idx_entrance_exams_specialty ON university.entrance_exams(specialty_id);
 
 -- Создание триггерной функции для обновления updated_at
 CREATE OR REPLACE FUNCTION university.update_updated_at_column()
@@ -87,12 +94,17 @@ CREATE VIEW university.specialty_statistics AS
 SELECT 
     s.specialty_id,
     s.name as specialty_name,
+    s.faculty,
     s.seats_available,
+    s.tuition_fee,
+    s.passing_score,
     COUNT(a.application_id) as total_applications,
-    COUNT(CASE WHEN a.status = 'approved' THEN 1 END) as approved_applications
+    COUNT(CASE WHEN a.status = 'approved' THEN 1 END) as approved_applications,
+    COUNT(DISTINCT e.exam_id) as total_exams
 FROM university.specialties s
 LEFT JOIN university.applications a ON s.specialty_id = a.specialty_id
-GROUP BY s.specialty_id, s.name, s.seats_available;
+LEFT JOIN university.entrance_exams e ON s.specialty_id = e.specialty_id
+GROUP BY s.specialty_id, s.name, s.faculty, s.seats_available, s.tuition_fee, s.passing_score;
 
 -- Создание функции для проверки доступности мест
 CREATE OR REPLACE FUNCTION university.check_available_seats()
