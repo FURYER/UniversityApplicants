@@ -44,6 +44,8 @@ CREATE TABLE university.education_documents (
     document_type VARCHAR(50) NOT NULL,
     document_number VARCHAR(50) NOT NULL,
     issue_date DATE NOT NULL,
+    issuing_organization VARCHAR(200) NOT NULL DEFAULT '',
+    scan_path VARCHAR(500),
     average_score DECIMAL(4,2) CHECK (average_score >= 0 AND average_score <= 100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -62,6 +64,7 @@ CREATE TABLE university.applications (
 CREATE TABLE university.exam_results (
     result_id SERIAL PRIMARY KEY,
     application_id INTEGER REFERENCES university.applications(application_id) ON DELETE CASCADE,
+    exam_type VARCHAR(50) NOT NULL DEFAULT 'ЕГЭ',
     subject VARCHAR(50) NOT NULL,
     score INTEGER NOT NULL CHECK (score >= 0 AND score <= 100),
     exam_date DATE NOT NULL,

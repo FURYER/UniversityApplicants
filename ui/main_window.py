@@ -626,7 +626,9 @@ class ApplicantsTab(QWidget):
                 query = query.filter((Applicant.last_name.ilike(f"%{filter_text}%")) | (Applicant.first_name.ilike(f"%{filter_text}%")))
             applicants = query.all()
             for a in applicants:
-                self.list_widget.addItem(f"{a.last_name} {a.first_name} ({a.birth_date})")
+                item = QListWidgetItem(f"{a.last_name} {a.first_name} ({a.birth_date})")
+                item.setData(Qt.UserRole, a.applicant_id)
+                self.list_widget.addItem(item)
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", str(e))
         finally:
@@ -650,15 +652,10 @@ class ApplicantsTab(QWidget):
                 session.close()
 
     def edit_applicant(self, item):
-        # Получаем ФИО и дату, ищем в базе
-        text = item.text()
-        fio, date_part = text.rsplit('(', 1)
-        fio = fio.strip()
-        date_str = date_part.replace(')', '').strip()
-        last_name, first_name = fio.split(' ', 1)
+        applicant_id = item.data(Qt.UserRole)
         session = Session()
         try:
-            applicant = session.query(Applicant).filter_by(last_name=last_name, first_name=first_name, birth_date=date_str).first()
+            applicant = session.query(Applicant).get(applicant_id)
             if not applicant:
                 QMessageBox.warning(self, "Ошибка", "Абитуриент не найден в базе.")
                 return
@@ -686,16 +683,11 @@ class ApplicantsTab(QWidget):
         if not selected_items:
             QMessageBox.warning(self, "Предупреждение", "Выберите абитуриента для управления документами.")
             return
-
-        text = selected_items[0].text()
-        fio, date_part = text.rsplit('(', 1)
-        fio = fio.strip()
-        date_str = date_part.replace(')', '').strip()
-        last_name, first_name = fio.split(' ', 1)
-
+        item = selected_items[0]
+        applicant_id = item.data(Qt.UserRole)
         session = Session()
         try:
-            applicant = session.query(Applicant).filter_by(last_name=last_name, first_name=first_name, birth_date=date_str).first()
+            applicant = session.query(Applicant).get(applicant_id)
             if applicant:
                 dialog = EducationDocumentsDialog(applicant, self)
                 dialog.exec()
@@ -707,16 +699,11 @@ class ApplicantsTab(QWidget):
         if not selected_items:
             QMessageBox.warning(self, "Предупреждение", "Выберите абитуриента для управления результатами экзаменов.")
             return
-
-        text = selected_items[0].text()
-        fio, date_part = text.rsplit('(', 1)
-        fio = fio.strip()
-        date_str = date_part.replace(')', '').strip()
-        last_name, first_name = fio.split(' ', 1)
-
+        item = selected_items[0]
+        applicant_id = item.data(Qt.UserRole)
         session = Session()
         try:
-            applicant = session.query(Applicant).filter_by(last_name=last_name, first_name=first_name, birth_date=date_str).first()
+            applicant = session.query(Applicant).get(applicant_id)
             if applicant:
                 dialog = ExamResultsDialog(applicant, self)
                 dialog.exec()
@@ -988,6 +975,13 @@ class ExamResultsDialog(QDialog):
 
         # Форма добавления
         form_layout = QFormLayout()
+        self.application_combo = QComboBox()
+        session = Session()
+        self.applications = session.query(Application).filter_by(applicant_id=self.applicant.applicant_id).all()
+        for app in self.applications:
+            specialty = app.specialty.name if app.specialty else "?"
+            self.application_combo.addItem(f"{specialty}", app.application_id)
+        session.close()
         self.exam_type = QComboBox()
         self.exam_type.addItems(['ЕГЭ', 'Вступительный экзамен'])
         self.subject = QLineEdit()
@@ -996,6 +990,7 @@ class ExamResultsDialog(QDialog):
         self.exam_date.setCalendarPopup(True)
         self.exam_date.setDate(QDate.currentDate())
         
+        form_layout.addRow("Заявление*:", self.application_combo)
         form_layout.addRow("Тип экзамена*:", self.exam_type)
         form_layout.addRow("Предмет*:", self.subject)
         form_layout.addRow("Балл*:", self.score)
@@ -1021,10 +1016,15 @@ class ExamResultsDialog(QDialog):
         self.list_widget.clear()
         session = Session()
         try:
-            results = session.query(ExamResult).filter_by(applicant_id=self.applicant.applicant_id).all()
+            # Получаем все application_id для этого абитуриента
+            application_ids = [a.application_id for a in session.query(Application).filter_by(applicant_id=self.applicant.applicant_id).all()]
+            if application_ids:
+                results = session.query(ExamResult).filter(ExamResult.application_id.in_(application_ids)).all()
+            else:
+                results = []
             for result in results:
                 item = QListWidgetItem(
-                    f"{result.exam_type}: {result.subject}\n"
+                    f"{getattr(result, 'exam_type', '')}: {result.subject}\n"
                     f"Балл: {result.score} | "
                     f"Дата: {result.exam_date}"
                 )
@@ -1034,11 +1034,15 @@ class ExamResultsDialog(QDialog):
             session.close()
 
     def add_result(self):
+        application_id = self.application_combo.currentData()
         exam_type = self.exam_type.currentText()
         subject = self.subject.text().strip()
         score = self.score.text().strip()
         exam_date = self.exam_date.date().toPython()
 
+        if not application_id:
+            QMessageBox.warning(self, "Ошибка", "Выберите заявление.")
+            return
         if not subject:
             QMessageBox.warning(self, "Ошибка", "Введите название предмета.")
             return
@@ -1055,7 +1059,7 @@ class ExamResultsDialog(QDialog):
         session = Session()
         try:
             result = ExamResult(
-                applicant_id=self.applicant.applicant_id,
+                application_id=application_id,
                 exam_type=exam_type,
                 subject=subject,
                 score=score,
@@ -1358,8 +1362,17 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(DARK_QSS)
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(ApplicantsTab(), "Абитуриенты")
-        self.tabs.addTab(SpecialtiesTab(), "Специальности")
-        self.tabs.addTab(ApplicationsTab(), "Заявления")
-        self.tabs.addTab(StatisticsTab(), "Статистика")  # Добавляем новую вкладку
+        self.applicants_tab = ApplicantsTab()
+        self.specialties_tab = SpecialtiesTab()
+        self.applications_tab = ApplicationsTab()
+        self.statistics_tab = StatisticsTab()
+        self.tabs.addTab(self.applicants_tab, "Абитуриенты")
+        self.tabs.addTab(self.specialties_tab, "Специальности")
+        self.tabs.addTab(self.applications_tab, "Заявления")
+        self.tabs.addTab(self.statistics_tab, "Статистика")
         self.setCentralWidget(self.tabs)
+        self.tabs.currentChanged.connect(self.on_tab_changed)
+
+    def on_tab_changed(self, index):
+        if self.tabs.tabText(index) == "Статистика":
+            self.statistics_tab.update_statistics()

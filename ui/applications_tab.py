@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QLineEdit, QDialog, QFormLayout, QDialogButtonBox,
-    QMessageBox, QComboBox, QDateEdit
+    QMessageBox, QComboBox, QDateEdit, QListWidgetItem
 )
 from PySide6.QtCore import Qt, QDate
 from db import Session
@@ -60,10 +60,12 @@ class ApplicationsTab(QWidget):
                     'approved': 'Принято',
                     'rejected': 'Отклонено'
                 }.get(a.status, a.status)
-                self.list_widget.addItem(
+                item = QListWidgetItem(
                     f"{a.applicant.last_name} {a.applicant.first_name} -> "
                     f"{a.specialty.name} ({a.specialty.code}) - {status_text}"
                 )
+                item.setData(Qt.UserRole, a.application_id)
+                self.list_widget.addItem(item)
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", str(e))
         finally:
@@ -87,24 +89,13 @@ class ApplicationsTab(QWidget):
                 session.close()
 
     def edit_application(self, item):
-        text = item.text()
-        applicant_name, rest = text.split(' -> ', 1)
-        specialty_info, status = rest.rsplit(' - ', 1)
-        specialty_name, specialty_code = specialty_info.rsplit(' (', 1)
-        specialty_code = specialty_code.rstrip(')')
-        
+        application_id = item.data(Qt.UserRole)
         session = Session()
         try:
-            application = session.query(Application).join(Applicant).join(Specialty).filter(
-                Applicant.last_name + ' ' + Applicant.first_name == applicant_name,
-                Specialty.name == specialty_name,
-                Specialty.code == specialty_code
-            ).first()
-            
+            application = session.query(Application).get(application_id)
             if not application:
                 QMessageBox.warning(self, "Ошибка", "Заявление не найдено в базе.")
                 return
-                
             dialog = EditApplicationDialog(application, self)
             if dialog.exec() == QDialog.Accepted:
                 if dialog.deleted:
@@ -116,7 +107,7 @@ class ApplicationsTab(QWidget):
                     for k, v in data.items():
                         setattr(application, k, v)
                     session.commit()
-                    QMessageBox.information(self, "Успех", "Статус заявления обновлен!")
+                    QMessageBox.information(self, "Успех", "Данные заявления обновлены!")
                 self.load_applications()
         except Exception as e:
             session.rollback()

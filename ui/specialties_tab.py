@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QListWidget, QPushButton, QHBoxLayout, QLineEdit, QMessageBox, QDialog, QFormLayout, QDialogButtonBox, QListWidgetItem
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QListWidget, QPushButton, QHBoxLayout, QLineEdit, QMessageBox, QDialog, QFormLayout, QDialogButtonBox, QListWidgetItem, QComboBox
 from PySide6.QtCore import Qt
 from db import Session
 from models import Specialty, EntranceExam
@@ -51,13 +51,15 @@ class SpecialtiesTab(QWidget):
                 query = query.filter((Specialty.name.ilike(f"%{filter_text}%")) | (Specialty.code.ilike(f"%{filter_text}%")))
             specialties = query.all()
             for s in specialties:
-                self.list_widget.addItem(
+                item = QListWidgetItem(
                     f"{s.name} ({s.code})\n"
                     f"Факультет: {s.faculty} | "
                     f"Мест: {s.seats_available} | "
                     f"Проходной балл: {s.passing_score if s.passing_score else 'Не указан'} | "
                     f"Стоимость: {s.tuition_fee if s.tuition_fee else 'Не указана'} ₽"
                 )
+                item.setData(Qt.UserRole, s.specialty_id)
+                self.list_widget.addItem(item)
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", str(e))
         finally:
@@ -81,12 +83,10 @@ class SpecialtiesTab(QWidget):
                 session.close()
 
     def edit_specialty(self, item):
-        text = item.text()
-        name, rest = text.split('\n', 1)
-        name = name.split(' (')[0]
+        specialty_id = item.data(Qt.UserRole)
         session = Session()
         try:
-            specialty = session.query(Specialty).filter_by(name=name).first()
+            specialty = session.query(Specialty).get(specialty_id)
             if not specialty:
                 QMessageBox.warning(self, "Ошибка", "Специальность не найдена в базе.")
                 return
@@ -114,12 +114,11 @@ class SpecialtiesTab(QWidget):
         if not selected_items:
             QMessageBox.warning(self, "Предупреждение", "Выберите специальность для управления экзаменами.")
             return
-
-        text = selected_items[0].text()
-        name = text.split('\n')[0].split(' (')[0]
+        item = selected_items[0]
+        specialty_id = item.data(Qt.UserRole)
         session = Session()
         try:
-            specialty = session.query(Specialty).filter_by(name=name).first()
+            specialty = session.query(Specialty).get(specialty_id)
             if specialty:
                 dialog = EntranceExamsDialog(specialty, self)
                 dialog.exec()
@@ -140,11 +139,14 @@ class AddSpecialtyDialog(QDialog):
         self.seats_available = QLineEdit()
         self.tuition_fee = QLineEdit()
         self.passing_score = QLineEdit()
+        self.study_form = QComboBox()
+        self.study_form.addItems(["Очная", "Заочная", "Очно-заочная"])
 
         layout.addRow("Название*:", self.name)
         layout.addRow("Код*:", self.code)
         layout.addRow("Факультет*:", self.faculty)
         layout.addRow("Количество мест*:", self.seats_available)
+        layout.addRow("Форма обучения*:", self.study_form)
         layout.addRow("Стоимость обучения:", self.tuition_fee)
         layout.addRow("Проходной балл:", self.passing_score)
 
@@ -236,11 +238,17 @@ class AddSpecialtyDialog(QDialog):
         self.accept()
 
     def get_data(self):
+        study_form_map = {
+            "Очная": "full_time",
+            "Заочная": "part_time",
+            "Очно-заочная": "distance"
+        }
         return {
             'name': self.name.text().strip(),
             'code': self.code.text().strip(),
             'faculty': self.faculty.text().strip(),
             'seats_available': int(self.seats_available.text().strip()),
+            'study_form': study_form_map[self.study_form.currentText()],
             'tuition_fee': int(self.tuition_fee.text().strip()) if self.tuition_fee.text().strip() else None,
             'passing_score': int(self.passing_score.text().strip()) if self.passing_score.text().strip() else None
         }
@@ -260,11 +268,21 @@ class EditSpecialtyDialog(QDialog):
         self.seats_available = QLineEdit(str(specialty.seats_available))
         self.tuition_fee = QLineEdit(str(specialty.tuition_fee) if specialty.tuition_fee else "")
         self.passing_score = QLineEdit(str(specialty.passing_score) if specialty.passing_score else "")
+        self.study_form = QComboBox()
+        self.study_form.addItems(["Очная", "Заочная", "Очно-заочная"])
+        # Установить текущее значение по technical value
+        tech_to_rus = {"full_time": "Очная", "part_time": "Заочная", "distance": "Очно-заочная"}
+        if specialty.study_form:
+            rus_val = tech_to_rus.get(specialty.study_form, "Очная")
+            idx = self.study_form.findText(rus_val, Qt.MatchFixedString)
+            if idx >= 0:
+                self.study_form.setCurrentIndex(idx)
 
         layout.addRow("Название*:", self.name)
         layout.addRow("Код*:", self.code)
         layout.addRow("Факультет*:", self.faculty)
         layout.addRow("Количество мест*:", self.seats_available)
+        layout.addRow("Форма обучения*:", self.study_form)
         layout.addRow("Стоимость обучения:", self.tuition_fee)
         layout.addRow("Проходной балл:", self.passing_score)
 
@@ -367,11 +385,17 @@ class EditSpecialtyDialog(QDialog):
         self.accept()
 
     def get_data(self):
+        study_form_map = {
+            "Очная": "full_time",
+            "Заочная": "part_time",
+            "Очно-заочная": "distance"
+        }
         return {
             'name': self.name.text().strip(),
             'code': self.code.text().strip(),
             'faculty': self.faculty.text().strip(),
             'seats_available': int(self.seats_available.text().strip()),
+            'study_form': study_form_map[self.study_form.currentText()],
             'tuition_fee': int(self.tuition_fee.text().strip()) if self.tuition_fee.text().strip() else None,
             'passing_score': int(self.passing_score.text().strip()) if self.passing_score.text().strip() else None
         }

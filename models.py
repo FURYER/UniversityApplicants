@@ -38,7 +38,6 @@ class Applicant(Base):
 
     applications = relationship('Application', back_populates='applicant')
     education_documents = relationship('EducationDocument', back_populates='applicant', cascade='all, delete-orphan')
-    exam_results = relationship('ExamResult', back_populates='applicant', cascade='all, delete-orphan')
 
 class EducationDocument(Base):
     __tablename__ = 'education_documents'
@@ -49,7 +48,7 @@ class EducationDocument(Base):
     document_type = Column(String(50), nullable=False)  # аттестат, диплом и т.д.
     document_number = Column(String(50), nullable=False)
     issue_date = Column(Date, nullable=False)
-    issuing_organization = Column(String(200), nullable=False)
+    issuing_organization = Column(String(200), nullable=False, default='')
     scan_path = Column(String(500))  # путь к файлу скана
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -75,7 +74,6 @@ class ExamResult(Base):
     __table_args__ = {'schema': 'university'}
 
     result_id = Column(Integer, primary_key=True)
-    applicant_id = Column(Integer, ForeignKey('university.applicants.applicant_id', ondelete='CASCADE'))
     application_id = Column(Integer, ForeignKey('university.applications.application_id', ondelete='SET NULL'))
     exam_type = Column(String(50), nullable=False)  # ЕГЭ или вступительный
     subject = Column(String(100), nullable=False)
@@ -83,7 +81,6 @@ class ExamResult(Base):
     exam_date = Column(Date, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    applicant = relationship('Applicant', back_populates='exam_results')
     application = relationship('Application', back_populates='exam_results')
 
 class EntranceExam(Base):
