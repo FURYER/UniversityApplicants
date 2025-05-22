@@ -1,10 +1,10 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGridLayout
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout
 from PySide6.QtCore import Qt
+from PySide6.QtWebEngineWidgets import QWebEngineView
 from db import Session
 from models import Specialty, Application
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
+import plotly.graph_objs as go
+import plotly.io as pio
 import numpy as np
 
 class StatisticsTab(QWidget):
@@ -22,134 +22,77 @@ class StatisticsTab(QWidget):
         header_layout.addStretch()
         layout.addLayout(header_layout)
 
-        # Создаем сетку для графиков
-        grid_layout = QGridLayout()
-        grid_layout.setSpacing(20)
+        # WebEngineView для plotly-графиков
+        self.webview = QWebEngineView()
+        layout.addWidget(self.webview)
 
-        # График количества заявлений по специальностям
-        self.applications_figure = Figure(figsize=(6, 4), facecolor='#181c27')
-        self.applications_canvas = FigureCanvas(self.applications_figure)
-        grid_layout.addWidget(self.applications_canvas, 0, 0)
-
-        # График проходных баллов
-        self.scores_figure = Figure(figsize=(6, 4), facecolor='#181c27')
-        self.scores_canvas = FigureCanvas(self.scores_figure)
-        grid_layout.addWidget(self.scores_canvas, 0, 1)
-
-        # График конкурса на место
-        self.competition_figure = Figure(figsize=(6, 4), facecolor='#181c27')
-        self.competition_canvas = FigureCanvas(self.competition_figure)
-        grid_layout.addWidget(self.competition_canvas, 1, 0)
-
-        # График статистики по факультетам
-        self.faculties_figure = Figure(figsize=(6, 4), facecolor='#181c27')
-        self.faculties_canvas = FigureCanvas(self.faculties_figure)
-        grid_layout.addWidget(self.faculties_canvas, 1, 1)
-
-        layout.addLayout(grid_layout)
         self.update_statistics()
 
     def update_statistics(self):
         session = Session()
         try:
-            # Получаем данные для графиков
             specialties = session.query(Specialty).all()
             applications = session.query(Application).all()
-
-            # 1. Количество заявлений по специальностям
-            self.plot_applications_by_specialty(specialties, applications)
-
-            # 2. Проходные баллы
-            self.plot_passing_scores(specialties)
-
-            # 3. Конкурс на место
-            self.plot_competition_ratio(specialties, applications)
-
-            # 4. Статистика по факультетам
-            self.plot_faculty_statistics(specialties, applications)
-
+            html = self.generate_statistics_html(specialties, applications)
+            self.webview.setHtml(html)
         finally:
             session.close()
 
-    def plot_applications_by_specialty(self, specialties, applications):
-        ax = self.applications_figure.add_subplot(111)
-        ax.clear()
-        
+    def generate_statistics_html(self, specialties, applications):
+        # 1. Количество заявлений по специальностям
         specialty_names = [s.name for s in specialties]
         application_counts = [len([a for a in applications if a.specialty_id == s.specialty_id]) for s in specialties]
-        
-        bars = ax.bar(specialty_names, application_counts, color='#4f8cff')
-        ax.set_title('Количество заявлений по специальностям', color='white', pad=20)
-        ax.set_xlabel('Специальности', color='white')
-        ax.set_ylabel('Количество заявлений', color='white')
-        
-        # Настройка внешнего вида
-        ax.set_facecolor('#23273a')
-        ax.tick_params(colors='white')
-        ax.grid(True, color='#3a3f5c', linestyle='--', alpha=0.3)
-        
-        # Поворот подписей для лучшей читаемости
-        plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
-        
-        self.applications_figure.tight_layout()
-        self.applications_canvas.draw()
+        fig1 = go.Figure(data=[go.Bar(x=specialty_names, y=application_counts, marker_color='#4f8cff')])
+        fig1.update_layout(
+            title={
+                'text': 'Количество заявлений по специальностям',
+                'y':0.92, 'x':0.5, 'xanchor': 'center', 'yanchor': 'top',
+                'font': dict(size=22, color='white', family='Segoe UI, Arial, sans-serif')
+            },
+            xaxis_title=dict(text='Специальности', font=dict(size=16, color='white', family='Segoe UI, Arial, sans-serif')),
+            yaxis_title=dict(text='Количество заявлений', font=dict(size=16, color='white', family='Segoe UI, Arial, sans-serif')),
+            plot_bgcolor='#23273a', paper_bgcolor='#181c27', font_color='white',
+            margin=dict(l=60, r=30, t=70, b=60), height=350, bargap=0.25,
+            legend=dict(bgcolor='#23273a', bordercolor='#3a3f5c', borderwidth=1, font=dict(size=14, color='white'))
+        )
 
-    def plot_passing_scores(self, specialties):
-        ax = self.scores_figure.add_subplot(111)
-        ax.clear()
-        
-        specialty_names = [s.name for s in specialties]
+        # 2. Проходные баллы по специальностям
         passing_scores = [s.passing_score if s.passing_score else 0 for s in specialties]
-        
-        bars = ax.bar(specialty_names, passing_scores, color='#4f8cff')
-        ax.set_title('Проходные баллы по специальностям', color='white', pad=20)
-        ax.set_xlabel('Специальности', color='white')
-        ax.set_ylabel('Проходной балл', color='white')
-        
-        # Настройка внешнего вида
-        ax.set_facecolor('#23273a')
-        ax.tick_params(colors='white')
-        ax.grid(True, color='#3a3f5c', linestyle='--', alpha=0.3)
-        
-        # Поворот подписей для лучшей читаемости
-        plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
-        
-        self.scores_figure.tight_layout()
-        self.scores_canvas.draw()
+        fig2 = go.Figure(data=[go.Bar(x=specialty_names, y=passing_scores, marker_color='#4f8cff')])
+        fig2.update_layout(
+            title={
+                'text': 'Проходные баллы по специальностям',
+                'y':0.92, 'x':0.5, 'xanchor': 'center', 'yanchor': 'top',
+                'font': dict(size=22, color='white', family='Segoe UI, Arial, sans-serif')
+            },
+            xaxis_title=dict(text='Специальности', font=dict(size=16, color='white', family='Segoe UI, Arial, sans-serif')),
+            yaxis_title=dict(text='Проходной балл', font=dict(size=16, color='white', family='Segoe UI, Arial, sans-serif')),
+            plot_bgcolor='#23273a', paper_bgcolor='#181c27', font_color='white',
+            margin=dict(l=60, r=30, t=70, b=60), height=350, bargap=0.25,
+            legend=dict(bgcolor='#23273a', bordercolor='#3a3f5c', borderwidth=1, font=dict(size=14, color='white'))
+        )
 
-    def plot_competition_ratio(self, specialties, applications):
-        ax = self.competition_figure.add_subplot(111)
-        ax.clear()
-        
-        specialty_names = [s.name for s in specialties]
+        # 3. Конкурс на место по специальностям
         competition_ratios = []
-        
         for specialty in specialties:
             applications_count = len([a for a in applications if a.specialty_id == specialty.specialty_id])
             ratio = applications_count / specialty.seats_available if specialty.seats_available > 0 else 0
             competition_ratios.append(ratio)
-        
-        bars = ax.bar(specialty_names, competition_ratios, color='#4f8cff')
-        ax.set_title('Конкурс на место по специальностям', color='white', pad=20)
-        ax.set_xlabel('Специальности', color='white')
-        ax.set_ylabel('Количество заявлений на место', color='white')
-        
-        # Настройка внешнего вида
-        ax.set_facecolor('#23273a')
-        ax.tick_params(colors='white')
-        ax.grid(True, color='#3a3f5c', linestyle='--', alpha=0.3)
-        
-        # Поворот подписей для лучшей читаемости
-        plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
-        
-        self.competition_figure.tight_layout()
-        self.competition_canvas.draw()
+        fig3 = go.Figure(data=[go.Bar(x=specialty_names, y=competition_ratios, marker_color='#4f8cff')])
+        fig3.update_layout(
+            title={
+                'text': 'Конкурс на место по специальностям',
+                'y':0.92, 'x':0.5, 'xanchor': 'center', 'yanchor': 'top',
+                'font': dict(size=22, color='white', family='Segoe UI, Arial, sans-serif')
+            },
+            xaxis_title=dict(text='Специальности', font=dict(size=16, color='white', family='Segoe UI, Arial, sans-serif')),
+            yaxis_title=dict(text='Количество заявлений на место', font=dict(size=16, color='white', family='Segoe UI, Arial, sans-serif')),
+            plot_bgcolor='#23273a', paper_bgcolor='#181c27', font_color='white',
+            margin=dict(l=60, r=30, t=70, b=60), height=350, bargap=0.25,
+            legend=dict(bgcolor='#23273a', bordercolor='#3a3f5c', borderwidth=1, font=dict(size=14, color='white'))
+        )
 
-    def plot_faculty_statistics(self, specialties, applications):
-        ax = self.faculties_figure.add_subplot(111)
-        ax.clear()
-        
-        # Группируем специальности по факультетам
+        # 4. Статистика по факультетам
         faculty_data = {}
         for specialty in specialties:
             if specialty.faculty not in faculty_data:
@@ -161,31 +104,54 @@ class StatisticsTab(QWidget):
             faculty_data[specialty.faculty]['specialties'] += 1
             faculty_data[specialty.faculty]['seats'] += specialty.seats_available
             faculty_data[specialty.faculty]['applications'] += len([a for a in applications if a.specialty_id == specialty.specialty_id])
-        
         faculties = list(faculty_data.keys())
         specialty_counts = [data['specialties'] for data in faculty_data.values()]
-        application_counts = [data['applications'] for data in faculty_data.values()]
-        
-        x = np.arange(len(faculties))
-        width = 0.35
-        
-        ax.bar(x - width/2, specialty_counts, width, label='Количество специальностей', color='#4f8cff')
-        ax.bar(x + width/2, application_counts, width, label='Количество заявлений', color='#ff5c5c')
-        
-        ax.set_title('Статистика по факультетам', color='white', pad=20)
-        ax.set_xlabel('Факультеты', color='white')
-        ax.set_ylabel('Количество', color='white')
-        ax.set_xticks(x)
-        ax.set_xticklabels(faculties)
-        ax.legend(facecolor='#23273a', edgecolor='#3a3f5c', labelcolor='white')
-        
-        # Настройка внешнего вида
-        ax.set_facecolor('#23273a')
-        ax.tick_params(colors='white')
-        ax.grid(True, color='#3a3f5c', linestyle='--', alpha=0.3)
-        
-        # Поворот подписей для лучшей читаемости
-        plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
-        
-        self.faculties_figure.tight_layout()
-        self.faculties_canvas.draw() 
+        application_counts_fac = [data['applications'] for data in faculty_data.values()]
+        fig4 = go.Figure()
+        fig4.add_bar(x=faculties, y=specialty_counts, name='Количество специальностей', marker_color='#4f8cff')
+        fig4.add_bar(x=faculties, y=application_counts_fac, name='Количество заявлений', marker_color='#ff5c5c')
+        fig4.update_layout(
+            barmode='group',
+            title={
+                'text': 'Статистика по факультетам',
+                'y':0.92, 'x':0.5, 'xanchor': 'center', 'yanchor': 'top',
+                'font': dict(size=22, color='white', family='Segoe UI, Arial, sans-serif')
+            },
+            xaxis_title=dict(text='Факультеты', font=dict(size=16, color='white', family='Segoe UI, Arial, sans-serif')),
+            yaxis_title=dict(text='Количество', font=dict(size=16, color='white', family='Segoe UI, Arial, sans-serif')),
+            plot_bgcolor='#23273a', paper_bgcolor='#181c27', font_color='white',
+            margin=dict(l=60, r=30, t=70, b=60), height=350, bargap=0.25,
+            legend=dict(bgcolor='#23273a', bordercolor='#3a3f5c', borderwidth=1, font=dict(size=14, color='white'))
+        )
+
+        # Генерируем HTML для всех графиков с карточками и стилями
+        html = '''
+        <html><head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+        body {{ background: #181c27; margin: 0; padding: 0; }}
+        .plot-card {{
+            background: #23273a;
+            border-radius: 18px;
+            box-shadow: 0 2px 16px 0 #00000033;
+            padding: 18px 12px 12px 12px;
+            margin-bottom: 32px;
+            max-width: 900px;
+            margin-left: auto;
+            margin-right: auto;
+        }}
+        </style>
+        </head><body>
+        <div class="plot-card">{fig1}</div>
+        <div class="plot-card">{fig2}</div>
+        <div class="plot-card">{fig3}</div>
+        <div class="plot-card">{fig4}</div>
+        </body></html>
+        '''.format(
+            fig1=pio.to_html(fig1, include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False}, default_width='100%', default_height='350px'),
+            fig2=pio.to_html(fig2, include_plotlyjs=False, full_html=False, config={'displayModeBar': False}, default_width='100%', default_height='350px'),
+            fig3=pio.to_html(fig3, include_plotlyjs=False, full_html=False, config={'displayModeBar': False}, default_width='100%', default_height='350px'),
+            fig4=pio.to_html(fig4, include_plotlyjs=False, full_html=False, config={'displayModeBar': False}, default_width='100%', default_height='350px')
+        )
+        return html 
